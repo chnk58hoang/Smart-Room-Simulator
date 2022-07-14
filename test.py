@@ -2,22 +2,22 @@ from data.create_dataframe import create_dataframe
 from data.dataset import SpeechDataset,collate_fn
 from engine.decoder import GreedySearchDecoder
 from tokenizer.tokenizer import create_corpus,create_vocab_model
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset,RandomSampler
 import sentencepiece as sp
 import torch
 
+
 dataframe = create_dataframe('all_data')
-create_corpus(corpus_path='vocab_model/corpus.txt',dataframe=dataframe)
-create_vocab_model(corpus_path='vocab_model/corpus.txt',vocab_size=54,model_type='bpe',model_prefix='vocab_model/vocab')
+dataframe = dataframe.sample(frac=1)
 
-vocal_model = sp.SentencePieceProcessor()
-vocal_model.load('vocab_model/vocab.model')
+train_len = int(len(dataframe) * 0.7)
+valid_len = int(len(dataframe) * 0.9)
 
+train_dataframe = dataframe.iloc[:train_len, :]
+valid_dataframe = dataframe.iloc[train_len:valid_len, :]
+test_dataframe = dataframe.iloc[valid_len:, :]
 
-dataset = SpeechDataset(dataframe,vocab_model=vocal_model,phase='test')
-
-dataloader = DataLoader(dataset,batch_size = 3,shuffle=True,collate_fn=collate_fn)
-
-decoder = GreedySearchDecoder(decoder=vocal_model,blank=0)
-
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+x = torch.tensor([[1,2,3],[2,3,4]])
+print(x.size())
+print(x.size(0))
+print(x.shape[0])

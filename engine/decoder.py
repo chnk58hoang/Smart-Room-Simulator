@@ -19,6 +19,7 @@ class GreedySearchDecoder(nn.Module):
         """
         decoded_str = []
         decoded_indices = []
+
         "Get highest tokens probability "
         indices = torch.argmax(probs, dim=-1)
 

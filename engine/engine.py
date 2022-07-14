@@ -1,4 +1,5 @@
-from torch.utils.data import Subset,DataLoader
+from torch.utils.data import RandomSampler, DataLoader
+from data.dataset import collate_fn
 from tqdm import tqdm
 import editdistance
 import torch
@@ -55,10 +56,9 @@ def train_model(model, dataset, dataloader, optimizer, device):
     return train_loss / counter
 
 
-def valid_model(model, dataset, dataloader, device, decoder):
+def valid_model(model, dataset, dataloader, device):
     model.eval()
     valid_loss = 0.0
-    wer = 0.0
     counter = 0
 
     with torch.no_grad():
@@ -70,24 +70,20 @@ def valid_model(model, dataset, dataloader, device, decoder):
 
             probs, loss = model(spectrogram, label, label_length)
             valid_loss += loss.item()
-
-            result, indices = decoder(probs)
-
-            for i in range(dataloader.batch_size):
-                wer += editdistance.eval(indices[i], label[i][:label_length[i]]) / label_length[i]
-
-        wer /= dataloader.batch_size
-        return valid_loss / counter, wer
+        return valid_loss / counter
 
 
-def inference(model, device, dataset,decoder):
+def inference(model, device, dataset, decoder, sp_model):
     model.eval()
-    subset_indices = torch.randint(size=(3,), low=0, high=len(dataset))
+    sample_set = RandomSampler(data_source=dataset, num_samples=3)
+    dataloader = DataLoader(dataset, batch_size=1, sampler=sample_set, collate_fn=collate_fn)
 
-    subset = Subset(dataset, indices=subset_indices)
-    dataloader = DataLoader(subset, batch_size=1)
+    counter = 0
+    wer = 0.0
+
     with torch.no_grad():
-        for data in enumerate(dataloader):
+        for batch, data in enumerate(dataloader):
+            counter += 1
             spectrogram = data[0].to(device)
             labels = data[1].to(device)
             label_lengths = data[2].to(device)
@@ -95,8 +91,10 @@ def inference(model, device, dataset,decoder):
             probs, _ = model(spectrogram)
             results, indices = decoder(probs)
 
-            for i in range(dataloader.batch_size):
-                print("Prediction")
-                print(results[i])
-                print("Label")
-                print()
+            label = sp_model.decode_ids(labels[0].tolist())
+            prediction = results[0]
+
+            wer += editdistance.eval(prediction,label) / len(label)
+            print("Label: {0:70} Prediction: {1}".format(label, prediction))
+
+        print(f'Word Error Rate {wer}')

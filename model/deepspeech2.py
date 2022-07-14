@@ -47,13 +47,14 @@ class DeepSpeech2(nn.Module):
 
         x = self.relu(self.fc1(x))
         x = self.gru2(self.gru1(x))
-        x = self.relu(self.fc2(x))
+        x = self.fc2(x)
 
         if target != None and target_length != None:
             x = self.log_softmax(x)
             x = x.permute(1, 0, 2)
             input_length = torch.full(size=(x.size(1),), fill_value=x.size(0), dtype=torch.long)
             loss = self.ctc_loss(x, target, input_length, target_length)
+            x = x.permute(1, 0, 2)
             return x, loss
 
         return self.softmax(x), None

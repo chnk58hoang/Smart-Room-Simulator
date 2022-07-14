@@ -10,10 +10,10 @@ import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, help="path to data directory")
-    parser.add_argument('--epoch', type=int, help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
-    parser.add_argument('--batch_size', type=int, help='batch size')
+    parser.add_argument('--data_path', type=str, default='all_data', help="path to data directory")
+    parser.add_argument('--epoch', type=int, default=1, help='Number of epochs')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
+    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
     parser.add_argument('--mode', type=str, default='greedy', help='decode mode (greedy or beam)')
 
     args = parser.parse_args()
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     # Define optimizer, lr_scheduler, trainer,decoder
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=0.005)
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=0.5, patience=2)
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=0.2, patience=1)
     trainer = Trainer(lr_scheduler)
 
     if args.mode == 'greedy':
@@ -66,9 +66,10 @@ if __name__ == "__main__":
     for epoch in range(args.epoch):
         print(f'Epoch {epoch + 1} / {args.epoch}')
         train_loss = train_model(model, train_dataset, train_dataloader, optimizer, device)
-        print(f'Traing loss: {train_loss}')
-        valid_loss, wer = valid_model(model, valid_dataset, valid_dataloader, device, decoder)
-        print(f'Validation loss: {valid_loss}')
-        print(f'Word Error Rate: {wer}')
+        print(f'Training loss: {train_loss}')
+        valid_loss = valid_model(model, valid_dataset, valid_dataloader, device, decoder)
+        print(f'Validation loss {valid_loss}')
         trainer(epoch, valid_loss, model, optimizer)
-        inference(model, device, test_dataset, decoder)
+        inference(model, device, test_dataset, decoder, vocal_model)
+        if trainer.stop:
+            break

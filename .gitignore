@@ -1,3 +1,5 @@
 all_data
 .idea
 __pycache__
+all_data.zip
+checkpoints
