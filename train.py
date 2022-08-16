@@ -1,75 +1,100 @@
-from model.deepspeech2 import DeepSpeech2
-from data.dataset import SpeechDataset, collate_fn
-from data.create_dataframe import create_dataframe
-from engine.engine import *
-from engine.decoder import *
-from torch.utils.data import DataLoader
-import sentencepiece as sp
+import pytorch_lightning as pl
 import torch
-import argparse
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.utils.data import DataLoader
+from model.deepspeech2 import DeepSpeech2
+from data.create_dataframe import create_dataframe
+from data.dataset import SpeechDataset, collate_fn
+from engine.engine import CustomCallBack
+from engine.decoder import BeamSearchDecoder
+import sentencepiece as sp
+import torch.nn as nn
+import torch.nn.functional as F
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', type=str, default='all_data', help="path to data directory")
-    parser.add_argument('--epoch', type=int, default=1, help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-    parser.add_argument('--mode', type=str, default='greedy', help='decode mode (greedy or beam)')
+vocal_model = sp.SentencePieceProcessor()
+vocal_model.load('vocab_model/vocab.model')
 
-    args = parser.parse_args()
+dataframe = create_dataframe('all_data')
+dataframe = dataframe.sample(frac=1)
 
-    # Define device
+train_len = int(len(dataframe) * 0.7)
+valid_len = int(len(dataframe) * 0.9)
 
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+train_dataframe = dataframe.iloc[:train_len, :]
+valid_dataframe = dataframe.iloc[train_len:valid_len, :]
+test_dataframe = dataframe.iloc[valid_len:, :]
 
-    # Define vocab model
-    vocal_model = sp.SentencePieceProcessor()
-    vocal_model.load('vocab_model/vocab.model')
+train_dataset = SpeechDataset(dataframe=train_dataframe, phase='train', vocab_model=vocal_model)
+valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
+test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
 
-    # Define dataset
+train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn, num_workers=8)
+valid_dataloader = DataLoader(valid_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=8)
+test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn, num_workers=8)
 
-    dataframe = create_dataframe(args.data_path)
-    dataframe = dataframe.sample(frac=1)
+model = DeepSpeech2(dropout=0.2,n_feats=128,rnn_dim=128,num_classes=54)
 
-    train_len = int(len(dataframe) * 0.7)
-    valid_len = int(len(dataframe) * 0.9)
 
-    train_dataframe = dataframe.iloc[:train_len, :]
-    valid_dataframe = dataframe.iloc[train_len:valid_len, :]
-    test_dataframe = dataframe.iloc[valid_len:, :]
+class SpeechModule(pl.LightningModule):
+    def __init__(self, model):
+        super(SpeechModule, self).__init__()
+        self.model = model
+        self.ctc_loss = nn.CTCLoss(blank=0)
 
-    train_dataset = SpeechDataset(dataframe=train_dataframe, phase='train', vocab_model=vocal_model)
-    valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
-    test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
+    def forward(self, x):
+        return self.model(x)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+    def configure_optimizers(self):
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
+        return [self.optimizer]
 
-    # Define model
+    def training_step(self, batch, batch_idx):
+        spec, target, target_lengths = batch
+        inputs = self.forward(spec)
+        input_lengths = torch.full(size=(inputs.size(0),), fill_value=inputs.size(1), dtype=torch.long)
+        inputs = inputs.permute(1, 0, 2)
+        inputs = F.log_softmax(inputs, dim=-1)
+        loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
+        tensorboard_logs = {'train_loss': loss}
 
-    model = DeepSpeech2(num_classes=54).to(device)
+        return {"loss": loss, 'log': tensorboard_logs}
 
-    # Define optimizer, lr_scheduler, trainer,decoder
+    def validation_step(self, batch, batch_idx):
+        spec, target, target_lengths = batch
+        inputs = self(spec)
+        input_lengths = torch.full(size=(inputs.size(0),), fill_value=inputs.size(1))
+        inputs = inputs.permute(1, 0, 2)
+        loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
 
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=0.005)
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, mode='min', factor=0.2, patience=1)
-    trainer = Trainer(lr_scheduler)
+        return {"val_loss": loss}
 
-    if args.mode == 'greedy':
-        decoder = GreedySearchDecoder(decoder=vocal_model)
+    def train_dataloader(self):
+        return train_dataloader
 
-    elif args.mode == 'beam':
-        decoder = BeamSearchDecoder(decoder=vocal_model)
+    def val_dataloader(self):
+        return valid_dataloader
 
-    # Training progress
+    def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        self.scheduler.step(avg_loss)
+        tensorboard_logs = {'val_loss': avg_loss}
+        return {'val_loss': avg_loss, 'log': tensorboard_logs}
 
-    for epoch in range(args.epoch):
-        print(f'Epoch {epoch + 1} / {args.epoch}')
-        train_loss = train_model(model, train_dataset, train_dataloader, optimizer, device)
-        print(f'Training loss: {train_loss}')
-        valid_loss = valid_model(model, valid_dataset, valid_dataloader, device, decoder)
-        print(f'Validation loss {valid_loss}')
-        trainer(epoch, valid_loss, model, optimizer)
-        inference(model, device, test_dataset, decoder, vocal_model)
-        if trainer.stop:
-            break
+
+def checkpoint_callback():
+    return ModelCheckpoint(
+        dirpath='checkpoints',
+        save_top_k=True,
+        verbose=True,
+        monitor='val_loss',
+        mode='min',
+    )
+
+
+decoder = BeamSearchDecoder()
+call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
+
+module = SpeechModule(model)
+trainer = pl.Trainer(max_epochs=10, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ])
+trainer.fit(module)

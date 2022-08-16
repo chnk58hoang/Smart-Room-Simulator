@@ -3,13 +3,12 @@ import torch.nn as nn
 
 
 class GreedySearchDecoder(nn.Module):
-    def __init__(self, decoder, blank=0):
+    def __init__(self,blank=0):
         """
         :param labels: {token:index}
         :param blank: index of blank token
         """
         super(GreedySearchDecoder, self).__init__()
-        self.decoder = decoder
         self.blank = blank
 
     def forward(self, probs):
@@ -17,7 +16,6 @@ class GreedySearchDecoder(nn.Module):
         :param probs shape: (batchsize,seq_len,num_classes)
         :return: list of decoded strings
         """
-        decoded_str = []
         decoded_indices = []
 
         "Get highest tokens probability "
@@ -29,22 +27,18 @@ class GreedySearchDecoder(nn.Module):
         "Remove blank labels"
         for index in indices:
             index = [int(i) for i in index if int(i) != self.blank]
-            decoded = self.decoder.decode_ids(index)
-            decoded = "".join(decoded)
-            decoded_str.append(decoded)
             decoded_indices.append(index)
-        return decoded_str, decoded_indices
+        return decoded_indices
 
 
 class BeamSearchDecoder(nn.Module):
-    def __init__(self, decoder, blank=0, beam_size=5):
+    def __init__(self, blank=0, beam_size=5):
         """
         :param labels: {token:index}
         :param blank: index of blank token
         :param beam_size: max number of hypos to hold after each decode step
         """
         super(BeamSearchDecoder, self).__init__()
-        self.decoder = decoder
         self.blank = blank
         self.beam_size = beam_size
 
@@ -80,13 +74,9 @@ class BeamSearchDecoder(nn.Module):
         indices = torch.unique_consecutive(indices, dim=-1)
 
         "Remove blank labels"
-        decoded_str = []
         decoded_indices = []
 
         for index in indices:
             index = [int(i) for i in index if i != self.blank]
-            decoded = self.decoder.decode_ids(index)
-            decoded = "".join(decoded)
-            decoded_str.append(decoded)
             decoded_indices.append(index)
-        return decoded_str, decoded_indices
+        return decoded_indices

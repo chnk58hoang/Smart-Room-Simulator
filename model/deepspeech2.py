@@ -1,60 +1,97 @@
-import torch
 import torch.nn as nn
+import torch
 
 
-class CNN_Block(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride):
-        super(CNN_Block, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, stride=stride, kernel_size=kernel_size)
-        self.batch_norm = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        return self.relu(self.batch_norm(self.conv(x)))
-
-
-class Bidirectional_GRU(nn.Module):
-    def __init__(self, input_size, hidden_size):
-        super(Bidirectional_GRU, self).__init__()
-        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size, batch_first=True, bidirectional=True)
-        self.dropout = nn.Dropout(0.5)
+class CNNLayerNorm(nn.Module):
+    def __init__(self, n_feats):
+        super(CNNLayerNorm, self).__init__()
+        self.layer_norm = nn.LayerNorm(n_feats)
 
     def forward(self, x):
+        x = x.transpose(2, 3).contiguous()
+        x = self.layer_norm(x)
+        return x.transpose(2, 3).contiguous()
+
+
+class ResidualCNN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel, stride, dropout, n_feats):
+        super(ResidualCNN, self).__init__()
+        self.cnn1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel, stride=stride,
+                              padding=kernel // 2)
+        self.cnn2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel, stride=stride,
+                              padding=kernel // 2)
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.layer_norm1 = CNNLayerNorm(n_feats)
+        self.layer_norm2 = CNNLayerNorm(n_feats)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        residual = x
+        x = self.layer_norm1(x)
+        x = self.gelu(x)
+        x = self.dropout1(x)
+        x = self.cnn1(x)
+        x = self.layer_norm2(x)
+        x = self.gelu(x)
+        x = self.dropout2(x)
+        x = self.cnn2(x)
+        x += residual
+
+        return x
+
+
+class BiGRU(nn.Module):
+    def __init__(self, input_size, hidden_size, dropout, batch_first=True):
+        super(BiGRU, self).__init__()
+        self.gru = nn.GRU(input_size=input_size, hidden_size=hidden_size, dropout=dropout, batch_first=batch_first,
+                          bidirectional=True)
+        self.layer_norm = nn.LayerNorm(input_size)
+        self.dropout = nn.Dropout(dropout)
+        self.gelu = nn.GELU()
+
+    def forward(self, x):
+        x = self.layer_norm(x)
+        x = self.gelu(x)
         x, _ = self.gru(x)
-        return self.dropout(x)
+        x = self.dropout(x)
+        return x
 
 
 class DeepSpeech2(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, dropout, n_feats, rnn_dim, num_classes):
         super(DeepSpeech2, self).__init__()
-        self.cnn1 = CNN_Block(1, 32, (11, 41), (2, 2))
-        self.cnn2 = CNN_Block(32, 32, (11, 21), (1, 2))
-        self.fc1 = nn.Linear(1568, 128)
-        self.gru1 = Bidirectional_GRU(input_size=128, hidden_size=128)
-        self.gru2 = Bidirectional_GRU(input_size=256, hidden_size=128)
-        self.fc2 = nn.Linear(256, num_classes)
-        self.relu = nn.ReLU()
-        self.log_softmax = nn.LogSoftmax(dim=-1)
-        self.softmax = nn.Softmax(dim=-1)
-        self.ctc_loss = nn.CTCLoss(blank=0)
+        self.cnn = nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding=3 // 2)
+        self.res_cnn1 = ResidualCNN(in_channels=32, out_channels=32, kernel=3, stride=1, dropout=dropout,
+                                    n_feats=n_feats)
 
-    def forward(self, x, target=None, target_length=None):
-        x = self.cnn1(x)
-        x = self.cnn2(x)
+        self.res_cnn2 = ResidualCNN(in_channels=32, out_channels=32, kernel=3, stride=1, dropout=dropout,
+                                    n_feats=n_feats)
+        self.gelu = nn.GELU()
 
+        self.fc = nn.Linear(n_feats * 32, rnn_dim)
+        self.bigru1 = BiGRU(input_size=rnn_dim, hidden_size=rnn_dim, dropout=dropout)
+        self.bigru2 = BiGRU(input_size=rnn_dim * 2, hidden_size=rnn_dim, dropout=dropout)
+
+        self.classifier = nn.Sequential(nn.Linear(rnn_dim * 2, rnn_dim), nn.GELU(), nn.Dropout(dropout),
+                                        nn.Linear(rnn_dim, num_classes))
+
+    def forward(self, x):
+        x = x.unsqueeze(1)
+        x = self.cnn(x)
+        x = self.res_cnn1(x)
+        x = self.res_cnn2(x)
         x = x.permute(0, 3, 1, 2)
         x = x.view(x.size(0), x.size(1), -1)
+        x = self.gelu(self.fc(x))
+        x = self.bigru1(x)
+        x = self.bigru2(x)
+        x = self.classifier(x)
 
-        x = self.relu(self.fc1(x))
-        x = self.gru2(self.gru1(x))
-        x = self.fc2(x)
+        return x
 
-        if target != None and target_length != None:
-            x = self.log_softmax(x)
-            x = x.permute(1, 0, 2)
-            input_length = torch.full(size=(x.size(1),), fill_value=x.size(0), dtype=torch.long)
-            loss = self.ctc_loss(x, target, input_length, target_length)
-            x = x.permute(1, 0, 2)
-            return x, loss
 
-        return self.softmax(x), None
+if __name__ == '__main__':
+    x = torch.rand(1, 1, 128, 141)
+    model = DeepSpeech2(dropout=0.2,n_feats=128,rnn_dim=256,num_classes=54)
+    print(model(x).size())
