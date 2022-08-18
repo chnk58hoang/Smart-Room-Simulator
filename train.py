@@ -8,7 +8,7 @@ from model.deepspeech2 import DeepSpeech2
 from data.create_dataframe import create_dataframe
 from data.dataset import SpeechDataset, collate_fn
 from engine.engine import CustomCallBack
-from engine.decoder import BeamSearchDecoder
+from engine.decoder import BeamSearchDecoder, GreedySearchDecoder
 import sentencepiece as sp
 import torch.nn as nn
 import torch.nn.functional as F
@@ -78,10 +78,13 @@ if __name__ == '__main__':
     parser.add_argument("--vocab", default="vocab_model/vocab.model", type=str)
     parser.add_argument("--data", default="all_data", type=str)
     parser.add_argument("--mode", type=str, default='greedy')
-
     args = parser.parse_args()
+
+    """Load vocab model"""
     vocal_model = sp.SentencePieceProcessor()
     vocal_model.load(args.vocab)
+
+    """Create dataframe,dataset,dataloader"""
 
     dataframe = create_dataframe(args.data)
     dataframe = dataframe.sample(frac=1)
@@ -97,13 +100,23 @@ if __name__ == '__main__':
     valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
     test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn, num_workers=8)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=8)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
+                                  num_workers=8)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn,
+                                  num_workers=8)
     test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn, num_workers=8)
+
+    """Init model"""
 
     model = DeepSpeech2(dropout=0.2, n_feats=128, rnn_dim=128, num_classes=54)
 
-    decoder = BeamSearchDecoder()
+    """Create decoder"""
+    if args.mode == 'beam':
+        decoder = BeamSearchDecoder()
+    elif args.mode == 'greedy':
+        decoder = GreedySearchDecoder()
+
+    """Create callback and train"""
     call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
 
     module = SpeechModule(model)
