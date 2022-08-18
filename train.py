@@ -1,3 +1,5 @@
+import argparse
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -10,29 +12,6 @@ from engine.decoder import BeamSearchDecoder
 import sentencepiece as sp
 import torch.nn as nn
 import torch.nn.functional as F
-
-vocal_model = sp.SentencePieceProcessor()
-vocal_model.load('vocab_model/vocab.model')
-
-dataframe = create_dataframe('all_data')
-dataframe = dataframe.sample(frac=1)
-
-train_len = int(len(dataframe) * 0.7)
-valid_len = int(len(dataframe) * 0.9)
-
-train_dataframe = dataframe.iloc[:train_len, :]
-valid_dataframe = dataframe.iloc[train_len:valid_len, :]
-test_dataframe = dataframe.iloc[valid_len:, :]
-
-train_dataset = SpeechDataset(dataframe=train_dataframe, phase='train', vocab_model=vocal_model)
-valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
-test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
-
-train_dataloader = DataLoader(train_dataset, batch_size=16, shuffle=True, collate_fn=collate_fn, num_workers=8)
-valid_dataloader = DataLoader(valid_dataset, batch_size=16, shuffle=False, collate_fn=collate_fn, num_workers=8)
-test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn, num_workers=8)
-
-model = DeepSpeech2(dropout=0.2,n_feats=128,rnn_dim=128,num_classes=54)
 
 
 class SpeechModule(pl.LightningModule):
@@ -92,9 +71,41 @@ def checkpoint_callback():
     )
 
 
-decoder = BeamSearchDecoder()
-call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--epoch", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--vocab", default="vocab_model/vocab.model", type=str)
+    parser.add_argument("--data", default="all_data", type=str)
+    parser.add_argument("--mode", type=str, default='greedy')
 
-module = SpeechModule(model)
-trainer = pl.Trainer(max_epochs=10, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ])
-trainer.fit(module)
+    args = parser.parse_args()
+    vocal_model = sp.SentencePieceProcessor()
+    vocal_model.load(args.vocab)
+
+    dataframe = create_dataframe(args.data)
+    dataframe = dataframe.sample(frac=1)
+
+    train_len = int(len(dataframe) * 0.7)
+    valid_len = int(len(dataframe) * 0.9)
+
+    train_dataframe = dataframe.iloc[:train_len, :]
+    valid_dataframe = dataframe.iloc[train_len:valid_len, :]
+    test_dataframe = dataframe.iloc[valid_len:, :]
+
+    train_dataset = SpeechDataset(dataframe=train_dataframe, phase='train', vocab_model=vocal_model)
+    valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
+    test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn, num_workers=8)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=8)
+    test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn, num_workers=8)
+
+    model = DeepSpeech2(dropout=0.2, n_feats=128, rnn_dim=128, num_classes=54)
+
+    decoder = BeamSearchDecoder()
+    call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
+
+    module = SpeechModule(model)
+    trainer = pl.Trainer(max_epochs=args.epoch, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ])
+    trainer.fit(module)
