@@ -15,9 +15,9 @@ import torch.nn.functional as F
 
 
 class SpeechModule(pl.LightningModule):
-    def __init__(self, model):
+    def __init__(self, model,device):
         super(SpeechModule, self).__init__()
-        self.model = model
+        self.model = model.to(device)
         self.ctc_loss = nn.CTCLoss(blank=0)
 
     def forward(self, x):
@@ -80,6 +80,9 @@ if __name__ == '__main__':
     parser.add_argument("--mode", type=str, default='greedy')
     args = parser.parse_args()
 
+
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
     """Load vocab model"""
     vocal_model = sp.SentencePieceProcessor()
     vocal_model.load(args.vocab)
@@ -100,11 +103,9 @@ if __name__ == '__main__':
     valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
     test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn,
-                                  num_workers=8)
-    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn,
-                                  num_workers=8)
-    test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn, num_workers=8)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn)
+    test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn)
 
     """Init model"""
 
