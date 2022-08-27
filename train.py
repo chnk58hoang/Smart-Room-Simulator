@@ -118,7 +118,7 @@ if __name__ == '__main__':
         decoder = GreedySearchDecoder()
 
     """Create callback and train"""
-    call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
+    call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model,device=device)
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ],devices=1,accelerator='gpu')
