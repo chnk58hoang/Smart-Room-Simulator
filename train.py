@@ -1,5 +1,4 @@
 import argparse
-
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -121,6 +120,6 @@ if __name__ == '__main__':
     """Create callback and train"""
     call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
 
-    module = SpeechModule(model, device)
+    module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ])
     trainer.fit(module)
