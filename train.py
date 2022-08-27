@@ -124,5 +124,5 @@ if __name__ == '__main__':
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ],
-                         devices=1, accelerator='gpu')
+                         accelerator='gpu', gpus=1, devices=1)
     trainer.fit(module)
