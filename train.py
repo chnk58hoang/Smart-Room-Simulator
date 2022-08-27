@@ -15,10 +15,12 @@ import torch.nn.functional as F
 
 
 class SpeechModule(pl.LightningModule):
-    def __init__(self, model,device):
+    def __init__(self, model, train_loader, val_loader, device):
         super(SpeechModule, self).__init__()
         self.model = model.to(device)
         self.ctc_loss = nn.CTCLoss(blank=0)
+        self.train_loader = train_loader
+        self.val_loader = val_loader
 
     def forward(self, x):
         return self.model(x)
@@ -49,10 +51,10 @@ class SpeechModule(pl.LightningModule):
         return {"val_loss": loss}
 
     def train_dataloader(self):
-        return train_dataloader
+        return self.train_loader
 
     def val_dataloader(self):
-        return valid_dataloader
+        return self.val_loader
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
@@ -79,7 +81,6 @@ if __name__ == '__main__':
     parser.add_argument("--data", default="all_data", type=str)
     parser.add_argument("--mode", type=str, default='greedy')
     args = parser.parse_args()
-
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -120,6 +121,6 @@ if __name__ == '__main__':
     """Create callback and train"""
     call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
 
-    module = SpeechModule(model,device)
+    module = SpeechModule(model, device)
     trainer = pl.Trainer(max_epochs=args.epoch, checkpoint_callback=checkpoint_callback(), callbacks=[call_back, ])
     trainer.fit(module)

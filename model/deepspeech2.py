@@ -89,9 +89,3 @@ class DeepSpeech2(nn.Module):
         x = self.classifier(x)
 
         return x
-
-
-if __name__ == '__main__':
-    x = torch.rand(1, 1, 128, 141)
-    model = DeepSpeech2(dropout=0.2,n_feats=128,rnn_dim=256,num_classes=54)
-    print(model(x).size())
