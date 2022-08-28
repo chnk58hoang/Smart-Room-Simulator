@@ -12,7 +12,6 @@ class CustomCallBack(pl.Callback):
         self.decoder = decoder
         self.vocab_model = vocab_model
 
-
     def on_validation_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
         subset = RandomSampler(data_source=self.test_dataset, num_samples=3)
         dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset, collate_fn=collate_fn)
@@ -30,6 +29,11 @@ class CustomCallBack(pl.Callback):
             for label in labels:
                 all_labels.append(self.vocab_model.decode_ids(label.tolist()))
 
+        mean_norm_ed = 0.0
+
         for i in range(len(all_labels)):
             print("Label: {0:70} Prediction: {1}".format(all_labels[i],
                                                          all_preds[i]))
+            mean_norm_ed += editdistance.eval(all_preds[i], all_labels[i]) / (len(all_labels[i]) * len(all_labels))
+
+        print(f"Mean Normalized editdistance:{mean_norm_ed}")
