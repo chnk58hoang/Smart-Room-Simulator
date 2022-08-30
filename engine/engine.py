@@ -14,7 +14,7 @@ class CustomCallBack(pl.Callback):
 
     def on_validation_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
         subset = RandomSampler(data_source=self.test_dataset, num_samples=3)
-        dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset, collate_fn=collate_fn)
+        dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset,collate_fn=collate_fn)
         all_preds = []
         all_labels = []
         for batch, data in enumerate(dataloader):

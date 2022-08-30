@@ -1,7 +1,7 @@
 import argparse
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping
 from torch.utils.data import DataLoader
 from model.deepspeech2 import DeepSpeech2
 from data.create_dataframe import create_dataframe
@@ -29,7 +29,8 @@ class SpeechModule(pl.LightningModule):
     def configure_optimizers(self):
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
-        return [self.optimizer]
+
+        return {'optimizer': self.optimizer, 'scheduler': self.scheduler, 'monitor': 'val_loss'}
 
     def training_step(self, batch, batch_idx):
         spec, target, target_lengths = batch
@@ -45,33 +46,23 @@ class SpeechModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         spec, target, target_lengths = batch
         inputs = self(spec)
-        input_lengths = torch.full(size=(inputs.size(0),), fill_value=inputs.size(1))
+        input_lengths = torch.full(size=(inputs.size(0),), fill_value=inputs.size(1), dtype=torch.long)
         inputs = inputs.permute(1, 0, 2)
+        inputs = F.log_softmax(inputs, dim=-1)
         loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
-
         return {"val_loss": loss}
+
+    def validation_epoch_end(self, outputs):
+        val_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        log = {"avg_val_loss": val_loss}
+        self.log("avg_val_loss", val_loss)
+        return {"log": log, "val_loss": val_loss}
 
     def train_dataloader(self):
         return self.train_loader
 
     def val_dataloader(self):
         return self.val_loader
-
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        self.scheduler.step(avg_loss)
-        tensorboard_logs = {'val_loss': avg_loss}
-        return {'val_loss': avg_loss, 'log': tensorboard_logs}
-
-
-def checkpoint_callback():
-    return ModelCheckpoint(
-        dirpath='checkpoints',
-        save_top_k=True,
-        verbose=True,
-        monitor='val_loss',
-        mode='min',
-    )
 
 
 if __name__ == '__main__':
@@ -111,7 +102,7 @@ if __name__ == '__main__':
 
     """Init model"""
 
-    model = DeepSpeech2(dropout=0.2, n_feats=128, rnn_dim=128, num_classes=54)
+    model = DeepSpeech2(num_classes=54)
 
     """Create decoder"""
     if args.mode == 'beam':
@@ -123,5 +114,8 @@ if __name__ == '__main__':
     call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
-    trainer = pl.Trainer(max_epochs=args.epoch, callbacks=[call_back, ], auto_lr_find=True)
+    trainer = pl.Trainer(max_epochs=args.epoch,
+                         callbacks=[call_back,],
+                         auto_lr_find=True)
+    # accelerator='gpu', gpus=1)
     trainer.fit(module)
