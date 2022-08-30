@@ -27,7 +27,7 @@ class SpeechModule(pl.LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
 
         return {'optimizer': self.optimizer, 'scheduler': self.scheduler, 'monitor': 'val_loss'}
@@ -51,12 +51,6 @@ class SpeechModule(pl.LightningModule):
         inputs = F.log_softmax(inputs, dim=-1)
         loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
         return {"val_loss": loss}
-
-    def validation_epoch_end(self, outputs):
-        val_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
-        log = {"avg_val_loss": val_loss}
-        self.log("avg_val_loss", val_loss)
-        return {"log": log, "val_loss": val_loss}
 
     def train_dataloader(self):
         return self.train_loader
@@ -115,7 +109,6 @@ if __name__ == '__main__':
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch,
-                         callbacks=[call_back,],
-                         auto_lr_find=True)
+                         callbacks=[call_back, ])
     # accelerator='gpu', gpus=1)
     trainer.fit(module)
