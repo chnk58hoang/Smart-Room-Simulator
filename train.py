@@ -52,6 +52,15 @@ class SpeechModule(pl.LightningModule):
         loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
         return {"val_loss": loss}
 
+    def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x['batch_val_loss'] for x in outputs]).mean()
+        avg_acc = torch.stack([x['batch_val_acc'] for x in outputs]).mean()
+
+        return {
+            'val_loss': avg_loss,
+            'val_acc': avg_acc,
+            'progress_bar': {'val_loss': avg_loss, 'val_acc': avg_acc}}
+
     def train_dataloader(self):
         return self.train_loader
 
@@ -109,5 +118,5 @@ if __name__ == '__main__':
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch,
-                         callbacks=[call_back, ], accelerator='gpu', gpus=1)
+                         callbacks=[call_back, ], accelerator='gpu', gpus=1, auto_lr_find=True)
     trainer.fit(module)
