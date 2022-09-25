@@ -21,11 +21,14 @@ train_dataset = SpeechDataset(dataframe=train_dataframe, phase='train', vocab_mo
 valid_dataset = SpeechDataset(dataframe=valid_dataframe, phase='valid', vocab_model=vocal_model)
 test_dataset = SpeechDataset(dataframe=test_dataframe, phase='test', vocab_model=vocal_model)
 
-train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=collate_fn)
+train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
 valid_dataloader = DataLoader(valid_dataset, batch_size=4, shuffle=False, collate_fn=collate_fn)
 test_dataloader = DataLoader(test_dataset, batch_size=3, shuffle=False, collate_fn=collate_fn)
 
 model = DeepSpeech2(num_classes=54)
 
+maxx = 0
 for data in train_dataloader:
-    print(model(data[0]).size())
+    maxx = max(data[0].size(-1),maxx)
+
+print(maxx)
