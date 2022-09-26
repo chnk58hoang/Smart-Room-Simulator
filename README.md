@@ -2,7 +2,7 @@
 
 ## Motivation
 
-This project was developed for my Speech Processing course in my University. The model architecture was inspried
+This project was developed for my Speech Processing course in my University. The model architecture was inspired
 by [DeepSpeech2](https://arxiv.org/pdf/1512.02595.pdf)'s architecture.
  <p align="center"><img src="imgs/paper.png" height=200></p>
 
