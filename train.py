@@ -52,15 +52,6 @@ class SpeechModule(pl.LightningModule):
         loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
         return {"val_loss": loss}
 
-    def validation_epoch_end(self, outputs):
-        avg_loss = torch.stack([x['batch_val_loss'] for x in outputs]).mean()
-        avg_acc = torch.stack([x['batch_val_acc'] for x in outputs]).mean()
-
-        return {
-            'val_loss': avg_loss,
-            'val_acc': avg_acc,
-            'progress_bar': {'val_loss': avg_loss, 'val_acc': avg_acc}}
-
     def train_dataloader(self):
         return self.train_loader
 
@@ -73,8 +64,8 @@ if __name__ == '__main__':
     parser.add_argument("--epoch", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--vocab", default="vocab_model/vocab.model", type=str)
-    parser.add_argument("--data", default="all_data", type=str)
-    parser.add_argument("--mode", type=str, default='greedy')
+    parser.add_argument("--data", default="cleaned_dataset", type=str)
+    parser.add_argument("--mode", type=str, default='beam')
     args = parser.parse_args()
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -118,5 +109,5 @@ if __name__ == '__main__':
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch,
-                         callbacks=[call_back, ], accelerator='gpu', gpus=1, auto_lr_find=True)
+                         callbacks=[call_back, ], auto_lr_find=True)
     trainer.fit(module)

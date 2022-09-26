@@ -1,6 +1,5 @@
-all_data
+cleaned_dataset
 .idea
 __pycache__
-all_data.zip
 checkpoints
 lightning_logs

@@ -14,7 +14,7 @@ class CustomCallBack(pl.Callback):
 
     def on_validation_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
         subset = RandomSampler(data_source=self.test_dataset, num_samples=3)
-        dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset,collate_fn=collate_fn)
+        dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset, collate_fn=collate_fn)
         all_preds = []
         all_labels = []
         for batch, data in enumerate(dataloader):
@@ -32,6 +32,7 @@ class CustomCallBack(pl.Callback):
         mean_norm_ed = 0.0
 
         for i in range(len(all_labels)):
+            print("\n")
             print("Label: {0:70} Prediction: {1}".format(all_labels[i],
                                                          all_preds[i]))
             mean_norm_ed += editdistance.eval(all_preds[i], all_labels[i]) / (len(all_labels[i]) * len(all_labels))
