@@ -1,5 +1,6 @@
-cleaned_dataset
+
 .idea
 __pycache__
 checkpoints
 lightning_logs
+cleaned_dataset
