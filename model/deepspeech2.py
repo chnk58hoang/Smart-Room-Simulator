@@ -32,18 +32,14 @@ class DeepSpeech2(nn.Module):
         self.gru1 = Bidirectional_GRU(input_size=128, hidden_size=128)
         self.gru2 = Bidirectional_GRU(input_size=256, hidden_size=128)
         self.fc2 = nn.Linear(256, num_classes)
-        self.relu = nn.ReLU()
 
     def forward(self, x):
-        x = x.unsqueeze(1)
         x = self.cnn1(x)
         x = self.cnn2(x)
-
         x = x.permute(0, 3, 1, 2)
         x = x.view(x.size(0), x.size(1), -1)
-
-        x = self.relu(self.fc1(x))
+        x = self.fc1(x)
         x = self.gru2(self.gru1(x))
-        x = self.relu(self.fc2(x))
-
+        x = self.fc2(x)
         return x
+

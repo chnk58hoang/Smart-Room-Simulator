@@ -1,7 +1,6 @@
 import argparse
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import EarlyStopping
 from torch.utils.data import DataLoader
 from model.deepspeech2 import DeepSpeech2
 from data.create_dataframe import create_dataframe
@@ -27,9 +26,8 @@ class SpeechModule(pl.LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
-
         return {'optimizer': self.optimizer, 'scheduler': self.scheduler, 'monitor': 'val_loss'}
 
     def training_step(self, batch, batch_idx):
@@ -45,12 +43,18 @@ class SpeechModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         spec, target, target_lengths = batch
-        inputs = self(spec)
+        inputs = self.forward(spec)
         input_lengths = torch.full(size=(inputs.size(0),), fill_value=inputs.size(1), dtype=torch.long)
         inputs = inputs.permute(1, 0, 2)
         inputs = F.log_softmax(inputs, dim=-1)
         loss = self.ctc_loss(inputs, target, input_lengths, target_lengths)
-        return {"val_loss": loss}
+
+        tensorboard_logs = {'val_loss': loss}
+
+        return {"loss": loss, 'log': tensorboard_logs}
+
+    def test_step(self, batch, batch_idx):
+        print('Testing...')
 
     def train_dataloader(self):
         return self.train_loader
@@ -105,9 +109,12 @@ if __name__ == '__main__':
         decoder = GreedySearchDecoder()
 
     """Create callback and train"""
-    call_back = CustomCallBack(test_dataset=test_dataset, decoder=decoder, vocab_model=vocal_model)
+    call_back = CustomCallBack(val_dataset=valid_dataset, test_dataset=test_dataset, decoder=decoder,
+                               vocab_model=vocal_model)
 
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch,
-                         callbacks=[call_back, ])#, accelerator='gpu', gpus=1)
+
+                         callbacks=[call_back, ], accelerator='gpu', gpus=1)
     trainer.fit(module)
+    trainer.test(module, test_dataloader)
