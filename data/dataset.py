@@ -1,6 +1,8 @@
 from torch.utils.data import Dataset
 from torchaudio import transforms
+from torch.distributions import uniform
 from torch.nn.utils.rnn import pad_sequence
+import torchaudio.functional as F
 import torch
 import torch.nn as nn
 import torchaudio
@@ -13,7 +15,7 @@ class SpeechDataset(Dataset):
         self.dataframe = dataframe
         self.phase = phase
         self.vocab_model = vocab_model
-        self.get_melspectrogram = transforms.MelSpectrogram(sample_rate=16000, n_mels=128, win_length=160,
+        self.get_melspectrogram = transforms.MelSpectrogram(sample_rate=16000, n_mels=64, win_length=160,
                                                             hop_length=80)
 
 
@@ -25,6 +27,7 @@ class SpeechDataset(Dataset):
         transcription = self.dataframe.iloc[index]['transcription'].lower()
         label = self.vocab_model.encode_as_ids(transcription)
         label_length = len(label)
+
         waveform, sample_rate = torchaudio.load(wavpath)
         spectrogram = self.get_melspectrogram(waveform)
         spectrogram = np.log(spectrogram + 1e-14)
@@ -41,7 +44,10 @@ def collate_fn(batch):
         all_specs.append(spec)
 
     all_specs = torch.stack(all_specs, dim=0)
-    return all_specs, all_labels,all_label_lengths
+    return all_specs, all_labels, all_label_lengths
 
 
-
+if __name__ == '__main__':
+    distribution = uniform.Uniform(0.9, 1.2)
+    x = distribution.sample()
+    print(x)

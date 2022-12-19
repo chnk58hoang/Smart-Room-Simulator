@@ -39,29 +39,4 @@ class CustomCallBack(pl.Callback):
 
         print(f"Mean Normalized editdistance:{mean_norm_ed}")
 
-    def on_test_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule"):
-        subset = RandomSampler(data_source=self.test_dataset, num_samples=3)
-        dataloader = DataLoader(self.test_dataset, batch_size=1, sampler=subset, collate_fn=collate_fn)
-        all_preds = []
-        all_labels = []
-        for batch, data in enumerate(dataloader):
-            probs = pl_module(data[0])
-            labels = data[1]
-            probs = F.softmax(probs, dim=-1)
-            preds = self.decoder(probs)
-
-            for pred in preds:
-                all_preds.append(self.vocab_model.decode_ids(pred))
-
-            for label in labels:
-                all_labels.append(self.vocab_model.decode_ids(label.tolist()))
-
-        mean_norm_ed = 0.0
-
-        for i in range(len(all_labels)):
-            print("Label: {0:70} Prediction: {1}".format(all_labels[i],
-                                                         all_preds[i]))
-            mean_norm_ed += editdistance.eval(all_preds[i], all_labels[i]) / (len(all_labels[i]) * len(all_labels))
-
-        print(f"Mean Normalized editdistance:{mean_norm_ed}")
 

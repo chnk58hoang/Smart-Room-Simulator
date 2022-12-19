@@ -26,7 +26,7 @@ class SpeechModule(pl.LightningModule):
         return self.model(x)
 
     def configure_optimizers(self):
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
         return {'optimizer': self.optimizer, 'scheduler': self.scheduler, 'monitor': 'val_loss'}
 
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--vocab", default="vocab_model/vocab.model", type=str)
     parser.add_argument("--data", default="all_data", type=str)
-    parser.add_argument("--mode", type=str, default='greedy')
+    parser.add_argument("--mode", type=str, default='beam')
     args = parser.parse_args()
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -115,6 +115,5 @@ if __name__ == '__main__':
     module = SpeechModule(model, train_dataloader, valid_dataloader, device)
     trainer = pl.Trainer(max_epochs=args.epoch,
 
-                         callbacks=[call_back, ], accelerator='gpu', gpus=1)
+                         callbacks=[call_back, ], auto_lr_find=True)
     trainer.fit(module)
-    trainer.test(module, test_dataloader)
